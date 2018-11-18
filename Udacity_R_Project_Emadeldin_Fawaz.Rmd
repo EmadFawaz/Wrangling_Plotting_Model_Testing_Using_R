@@ -1,0 +1,1197 @@
+Developing a model for loan risk estimation by Emadeldin_Fawaz
+========================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Loading Needed Packages
+library(readr)
+library(ggplot2) 
+library(gridExtra) 
+library(plyr)
+library(ggplot2)
+library(ggcorrplot)
+library(RColorBrewer)
+library(plotrix)
+library(dplyr)
+library(memisc)
+library(forcats)
+library(grid)
+
+```
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+
+df <- read_csv("prosperLoanData.csv")
+
+```
+##
+
+
+# Introduction
+
+This project was conducted as part of a nano degree at Udacity. Because data v
+isualization and data science is a passion, I decided to limit the time to 
+invest in this project to 30 working hours. 
+The data used in this project is called "Loan Data Form Prosper" and it was 
+supplied with the project instructions. However, it is also available online 
+(please see the references).
+In this project, I aimed at visualizing the different variable separately and
+against each other. The idea was to try to identify a pattern or a 
+relationship between the different variables. I aimed to develop and test a
+model that helps to predict one of the important variables (from my point of 
+view). Eventually, I was successful in developing a simple 5 variable model 
+that predicts the yield on loans quite successfully. 
+
+
+# Preliminary data investigation and understanding the dataframe
+
+
+```{r echo=FALSE, Preliminary_data_investigation_one}
+str(df)
+summary(df)
+
+```
+
+The data is relatively large (113937 observations of 81 variables). 
+I am concerned that running any code on such huge dataframe will take too long. 
+I will generate a sub-dataframe of randomly selected 12000 observations 
+(around 10% of the total observations) to be my working dataframe 
+(named: subfd). 
+I will explore the subset of the dataframe to see if I can come up with 
+a plausible hypothesis. Then I will test my hypothesis on the full dataframe.
+
+
+
+```{r echo=FALSE, Preliminary_data_investigation_two}
+
+subdf <- df[sample(1:nrow(df), 12000),]
+
+summary(subdf)
+
+colnames(subdf)
+
+```
+
+
+I compared some indicators between the full df and the subdf. Ignoring possible
+outliers, it looks like that my sub-dataframe could represent the original 
+dataframe. Among the numerical indicators I looked at:
+Term, BorrowerRate, ProsperRating (numeric), EmploymentStatusDuration, AvailableBankcardCredit, StatedMonthlyIncome, and LoanOriginalAmount.
+
+
+
+Interesting to notice that some people with a monthly income of more than 
+$250,000 are applying for loans with max $35000.
+
+
+I will focus on some variables that I think they are of particular interest to 
+the model I am trying to build:-
+
+Some variables are reflecting each other (like ProsperRating (numeric), 
+ProsperRating (Alpha) and ProsperScore). So I will choose one of them in such 
+cases. Some variables are included in others (like LenderYield: The Lender 
+yield is equal to the interest rate on the loan less the servicing fee). 
+So I will use only the LenderYield and not the BorrowerRate. 
+GroupKey includes if the borrower was in a group or not. 
+Thus the variable CurrentlyInGroup could be omitted.
+
+
+
+Variables that could be of particular interest to my model are:
+
+
+
+A.	Numerical
+
+1.	"Term"                                
+2.	"LenderYield"                        
+3.	"EstimatedReturn"  
+4.	"ProsperScore"                       
+5.	"EmploymentStatusDuration"            
+6.	"CreditScoreRangeLower"              
+7.	"CreditScoreRangeUpper"               
+8.	"CurrentCreditLines"                  
+9.	"OpenCreditLines"                    
+10.	"OpenRevolvingAccounts"              
+11.	"OpenRevolvingMonthlyPayment"         
+12.	"InquiriesLast6Months"               
+13.	"TotalInquiries" 
+14.	"AmountDelinquent"                    
+15.	"DelinquenciesLast7Years"            
+16.	"PublicRecordsLast10Years"            
+17.	"PublicRecordsLast12Months"          
+18.	"RevolvingCreditBalance"              
+19.	"BankcardUtilization"                
+20.	"AvailableBankcardCredit"             
+21.	"TotalTrades"                        
+22.	"TradesNeverDelinquent (percentage)"  
+23.	"TradesOpenedLast6Months"            
+24.	"DebtToIncomeRatio"                   
+25.	"IncomeRange"                        
+26.	"StatedMonthlyIncome"                
+27.	"TotalProsperLoans"                  
+28.	"OnTimeProsperPayments"              
+29.	"ProsperPaymentsLessThanOneMonthLate" 
+30.	"ProsperPaymentsOneMonthPlusLate"    
+31.	"ProsperPrincipalBorrowed"            
+32.	"ProsperPrincipalOutstanding"        
+33.	"ScorexChangeAtTimeOfListing"         
+34.	"LoanCurrentDaysDelinquent"          
+35.	"LoanMonthsSinceOrigination"         
+36.	"LoanOriginalAmount"                 
+37.	"MonthlyLoanPayment"                 
+38.	"LP_CustomerPayments"                 
+39.	"LP_CustomerPrincipalPayments"       
+40.	"LP_InterestandFees"                 
+41.	"LP_NetPrincipalLoss"                
+42.	"PercentFunded"                       
+43.	"Recommendations"                    
+44.	"InvestmentFromFriendsCount"          
+45.	"InvestmentFromFriendsAmount"        
+46.	"Investors
+
+
+	
+B.	Categorical
+
+1.	"CreditGrade"  
+2.	"LoanStatus"
+3.	"ListingCategory (numeric)"           
+4.	"Occupation"                          
+5.	"EmploymentStatus"                   
+6.	"IsBorrowerHomeowner"                
+7.	"IncomeVerifiable"                
+8.	"LoanOriginationQuarter"
+9.	"EmploymentStatus"
+
+
+
+ListingCategory
+The category of the listing that the borrower selected when posting their 
+listing: 0 - Not Available, 1 - Debt Consolidation, 2 - Home Improvement, 
+3 - Business, 4 - Personal Loan, 5 - Student Use, 6 - Auto, 7- Other, 
+8 - Baby&Adoption, 9 - Boat, 10 - Cosmetic Procedure, 11 - Engagement Ring, 
+12 - Green Loans, 13 - Household Expenses, 14 - Large Purchases, 
+15 - Medical/Dental, 16 - Motorcycle, 
+17 - RV, 18 - Taxes, 19 - Vacation, 20 - Wedding Loans
+
+
+
+I will use box plots to explore the numerical variables and histograms to explore
+the categorical variables.
+
+
+
+# Univariate Plots Section
+
+I will use boxplots for plotting the numerical variables and 
+histograms for plotting the categorical variables.
+ 
+
+```{r echo=FALSE, Univariate_Plots_one}
+# Ploting Numerical variables
+
+NumPlot1 = qplot(y= InquiriesLast6Months, data = subdf, geom="boxplot")
+NumPlot2 = qplot(y= TotalInquiries, data = subdf, geom="boxplot")         
+
+grid.arrange(NumPlot1, NumPlot2, ncol = 2)
+
+with (subdf, cor.test(InquiriesLast6Months, TotalInquiries))
+
+```
+
+As expected, there is a very high correlation (rho > 0.7) between 
+InquiriesLast6Months and TotalInquiries. Accordingly, in the model I will only 
+use the most recent variable: InquiriesLast6Months
+
+
+
+```{r echo=FALSE, Univariate_Plots_two}
+# Ploting Numerical variables
+
+NumPlot3 = qplot(y= AvailableBankcardCredit, data = subdf, geom="boxplot")             
+NumPlot4 = qplot(y= DebtToIncomeRatio, data = subdf, geom="boxplot")           
+
+grid.arrange(NumPlot3, NumPlot4, ncol = 2)
+
+
+summary(subdf$AvailableBankcardCredit)
+
+
+summary(subdf$DebtToIncomeRatio)
+
+```
+
+The majority of the people applying for the loans have very low dept to income 
+ratio (75% are below 0.32) and very low Available Bank Card Credit 
+(75% below $13,245). This is expected because the maximum loan in the data has
+the value of $35,000. With such small loans it is not expected that the 
+majority of the customers are high earners.
+
+
+
+```{r echo=FALSE, Univariate_Plots_three}
+# Ploting Numerical variables
+
+
+NumPlot5 = qplot(y= StatedMonthlyIncome, data = subdf, geom="boxplot")            
+NumPlot6 = qplot(y= LoanOriginalAmount, data = subdf, geom="boxplot")                     
+NumPlot7 = qplot(y= MonthlyLoanPayment, data = subdf, geom="boxplot")
+NumPlot8 = qplot(y= EmploymentStatusDuration, data = subdf, geom="boxplot")
+
+grid.arrange(NumPlot5, NumPlot6, NumPlot7, NumPlot8, ncol = 2)
+
+summary(subdf$StatedMonthlyIncome)
+summary(subdf$LoanOriginalAmount)
+
+```
+
+75% of the loan applicants have monthly income below $6874. I believe the 
+majority of the loan applicants are employees or small scale entrepreneurs.
+Too much outliers are noted in these variables.
+                  
+
+```{r echo=FALSE, Univariate_Plots_four}
+# Ploting categorical variables
+
+CatPlot1 = qplot(x= CreditGrade, data = subdf)
+CatPlot2 = qplot(x= subdf$`ListingCategory (numeric)`, binwidth = 1)
+
+grid.arrange(CatPlot1, CatPlot2, ncol = 2)
+
+
+```
+
+
+
+```{r echo=FALSE, Univariate_Plots_five}
+
+CatPlot3 = qplot(x= subdf$Occupation)
+CatPlot4 = qplot(x= EmploymentStatus, data = subdf)
+
+grid.arrange(CatPlot3, CatPlot4, ncol = 1)
+
+
+```
+
+```
+
+count(subdf$Occupation)
+count(subdf$EmploymentStatus)
+
+```
+
+```{r echo=FALSE, Univariate_Plots_six}
+
+CatPlot6 = qplot(x= IsBorrowerHomeowner, data = subdf)
+CatPlot7 = qplot(x= IncomeVerifiable, data = subdf)
+
+
+grid.arrange(CatPlot6, CatPlot7, ncol = 2)
+
+
+```
+
+
+
+
+
+
+library(plotrix)
+
+pie3D(as.data.frame(count(subdf$Occupation))$freq, labels = as.data.frame(count(subdf$Occupation))$x,  main = "Occupations", explode=0.1, 
+      radius=2, labelcex = 0.5,  start=0.7)
+
+
+
+Too many occupations. The pie chart will not be adequate to summarize 
+all data.
+
+
+
+
+
+```{r echo=FALSE, Univariate_Plots_seven}
+
+library(forcats)
+
+
+ggplot(subdf, aes(x = fct_infreq(Occupation), fill = fct_infreq(Occupation))) +
+  geom_bar(width = 1, colour = "black", show.legend = FALSE) +
+  xlab("Customer Occubations") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+```
+
+
+## Univariate Analysis
+
+I used the univariate analysis to understand the characteristics of Loan 
+Borrowers.
+
+The majority of the customers have low dept to income 
+ratio (75% are below 0.32) and low Available Bank Card Credit 
+(75% below $13,245). 
+This is expected because the maximum loan in the data has the value of $35,000.
+With such small loans it is not expected that the majority of the customers 
+are high earners.
+
+75% of the loan applicants have monthly income below $6874. 
+I believe the majority of the loan applicants are employees or small scale 
+entrepreneurs.
+
+Dept consolidation was the most frequent reason for applying for a loan. 
+Business and home improvement were the 2nd and 3rd frequent loan reasons 
+(respectively) in the data. Loan grades were not applicable for most of the
+loan borrowers (8943 out of 12000 in the subseted dataframe). However, most 
+of the known grades were of the middle range (C-D).
+
+As expected, most of the borrowers are employees. Their income could be 
+verified. Owning a house or not was almost equally distributed among applicants.
+
+
+
+# Bivariate Plots Section
+
+The most important dependent variables are:
+  CreditGrade
+  LoanStatus
+  LenderYield
+  
+Other variables like estimated return will be correlated to one of these 
+variables (by definition).
+
+```{r echo=FALSE, Bivariate_Plots_one}
+#understanding the vriables
+
+with(subdf, cor.test(LenderYield, EstimatedReturn))
+
+
+```
+For instance, the Correlation coefficient between the Estimated return and 
+Lender yield is 0.815 which is significantly high.
+
+
+The LoanStatus & cridetGrade variable are categorical variables. It is better
+to transform them to numerical variables before proceeding
+
+
+#understanding the vriables
+
+count(subdf$CreditGrade)
+
+count(subdf$LoanStatus)
+
+```{r echo=FALSE, Bivariate_Plots_two}
+
+subdf$LoanStatusNum <- 
+  ifelse(subdf$LoanStatus == 'Chargedoff', 1, 
+    ifelse(subdf$LoanStatus == 'Defaulted', 2,
+      ifelse(subdf$LoanStatus == 'Past Due (>120 days)', 3,
+        ifelse(subdf$LoanStatus == 'Past Due (91-120 days)', 3,
+          ifelse(subdf$LoanStatus == 'Past Due (61-90 days)', 3,
+            ifelse(subdf$LoanStatus == 'Past Due (31-60 days)', 4,
+              ifelse(subdf$LoanStatus== 'Past Due (16-30 days)', 5,
+                ifelse(subdf$LoanStatus == 'Past Due (1-15 days', 6,
+                 ifelse(subdf$LoanStatus == 'Current', 7,       
+                  ifelse(subdf$LoanStatus == 'FinalPaymentInProgress', 8,
+                    ifelse(subdf$LoanStatus == 'Completed', 9,
+                      NA)))))))))))
+
+
+```
+
+
+```{r echo=FALSE, Bivariate_Plots_three}
+subdf$CreditGradeNum <- ifelse(subdf$CreditGrade == 'NC', 1, 
+                               ifelse(subdf$CreditGrade== 'HR', 2,
+                                ifelse(subdf$CreditGrade== 'E', 3,
+                                 ifelse(subdf$CreditGrade== 'D', 4,
+                                  ifelse(subdf$CreditGrade== 'C', 5,
+                                   ifelse(subdf$CreditGrade== 'B', 6,
+                                    ifelse(subdf$CreditGrade== 'A', 7,
+                                     ifelse(subdf$CreditGrade== 'AA', 8,       
+                                            NA))))))))
+
+```
+
+
+
+
+## Finding most important independent variables
+
+count(subdf$Recommendations)
+ 
+count(subdf$PublicRecordsLast12Months)
+
+count(subdf$InquiriesLast6Months)
+
+count(subdf$TotalProsperLoans)
+
+summary(subdf$OnTimeProsperPayments)
+
+summary(subdf$PercentFunded)
+
+summary(subdf$Term)
+
+
+ The majority of the applicants do not have recommendations and public records.
+ Total prosper loans is mainly 1 or 2 (expected for employees) and most of 
+ its information is not available. The loans are mainly fully funded by the 
+ lender.
+ 
+
+```{r echo=FALSE, Bivariate_Plots_four}
+
+
+
+p1 = qplot(x = as.character(CreditGradeNum), 
+      y =  EmploymentStatusDuration, 
+      data = subdf, 
+      geom = 'boxplot') +
+      ylim(0, 500)
+
+p2 = qplot(x = as.character(CreditGradeNum), 
+      y =  CurrentCreditLines, 
+      data = subdf, 
+      geom = 'boxplot') +
+      ylim(0,30)
+
+p3= ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                        y = DebtToIncomeRatio)) + 
+        geom_boxplot() + 
+        ylim(0, 1.5)
+
+p4 = ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                         y = StatedMonthlyIncome)) +
+        geom_boxplot() +
+        ylim(0,15000)
+
+p5=   ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                         y = InquiriesLast6Months)) +
+        geom_boxplot() +
+        ylim(0,10)
+
+p6 = ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                         y = AmountDelinquent)) +
+        geom_boxplot() +
+        ylim(0,50000)    
+
+
+p7 = ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                         y = AvailableBankcardCredit)) +
+        geom_boxplot() +
+        ylim(0,10000)  
+
+
+p8 = ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                         y = OnTimeProsperPayments)) +
+        geom_boxplot()+
+        ylim(0,30)   
+
+p9 = ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                         y = LenderYield)) +
+        geom_boxplot()   
+
+
+grid.arrange(p1, p2, p3, p4, p5, p6,p7, p8, p9, ncol = 2)
+
+```
+
+It looks like only two credit grades are strongly influenced by the duration 
+of employment. AA credit grade has higher employment status duration and 
+grade HR has lower employment status duration.The rest of the grades are
+not showing a particular pattern.
+
+It is more obvious that the increase in current credit lines is associated 
+ with higher credit grades.
+
+Dept to income ratio is not playing a significant role in the credit grade.
+This might be expected in this case because the data is more about employees.
+Dept to income ratio might be more decisive in corporate loans. It is hard to 
+verify Dept in the case of people (unless they volunteeringly reveal) .
+
+Stated monthly income is playing a role in deciding the credit grade. To some 
+extent, the boxes are moving up with the better credit grades.
+
+It looks like the increase in Inquiries in the Last 6 Months is, to some extent, 
+is associated with increase in the credit grade.
+
+No risk no fun. As the credit grade decreases the lender yield increases
+
+
+```{r echo=FALSE, Bivariate_Plots_five}
+
+
+
+p1 = qplot(x = as.character(LoanStatusNum), 
+      y =  Term, 
+      data = subdf, 
+      geom = 'boxplot') +
+  ylim(0, 60)
+
+p2 = qplot(x = as.character(LoanStatusNum), 
+      y =  EmploymentStatusDuration, 
+      data = subdf, 
+      geom = 'boxplot') +
+  ylim(0,30)
+
+p3= ggplot(subdf, aes(x = as.character(LoanStatusNum), 
+                        y = CurrentCreditLines)) + 
+        geom_boxplot() + 
+        ylim(0, 30)
+p4 = ggplot(subdf, aes(x = as.character(LoanStatusNum), 
+                         y = InquiriesLast6Months)) +
+        geom_boxplot() + 
+        ylim(0, 15)
+
+p5=   ggplot(subdf, aes(x = as.character(LoanStatusNum), 
+                         y = StatedMonthlyIncome)) +
+        geom_boxplot() + 
+        ylim(0, 20000)
+
+p6 = ggplot(subdf, aes(x = as.character(LoanStatusNum), 
+                         y = OnTimeProsperPayments)) +
+        geom_boxplot() + 
+        ylim(0, 80)   
+
+grid.arrange(p1, p2, p3, p4, p5, p6, ncol = 2)
+
+
+```
+  
+The majority of the loans were for 36 months. Loan Term is not affecting the 
+status.
+
+Duration of employment status is not affecting the loan status.
+
+Loan status is getting better with increase in Current credit line.
+
+Inquiries in the last 6 months do not affect loan status.
+
+Stated monthly income is, to some extent, a decisive factor that enhances
+loan status.
+
+On time prosper payment is not showing a specific pattern in relation to
+loan status.
+
+
+```{r echo=FALSE, Bivariate_Plots_six}
+
+p1 = qplot(x = IsBorrowerHomeowner, 
+      y =  LoanStatusNum, 
+      data = subdf, 
+      geom = 'boxplot') 
+
+p2 = qplot(x = IncomeVerifiable, 
+      y =  LoanStatusNum, 
+      data = subdf, 
+      geom = 'boxplot')
+
+
+grid.arrange(p1, p2, ncol = 1)
+
+
+```
+ 
+ Home ownership and income verifiability are not significantly impacting 
+ loan status.
+ 
+
+```{r echo=FALSE, Bivariate_Plots_seven}
+
+
+
+p1= ggplot(subdf, aes(x = LenderYield, 
+                        y = LoanOriginalAmount)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+p2= ggplot(subdf, aes(x = LenderYield, 
+                        y = EmploymentStatusDuration)) + 
+        geom_point(alpha = 1/50) + 
+        ylim(0, 30) +
+       geom_smooth(method="lm")
+
+
+p3= ggplot(subdf, aes(x = LenderYield, 
+                        y = CurrentCreditLines)) + 
+        geom_point(alpha = 1/50) + 
+        ylim(0, 30)+
+        geom_smooth(method="lm")
+
+p4 = ggplot(subdf, aes(x = LenderYield, 
+                         y = InquiriesLast6Months)) +
+        geom_point(alpha = 1/50) + 
+        ylim(0, 15) + 
+        geom_smooth(method="lm")
+
+p5=   ggplot(subdf, aes(x = LenderYield, 
+                         y = StatedMonthlyIncome)) +
+        geom_point(alpha = 1/50) + 
+        ylim(0, 20000) + 
+        geom_smooth(method="lm")
+
+p6 = ggplot(subdf, aes(x = LenderYield, 
+                         y = OnTimeProsperPayments)) +
+        geom_point(alpha = 1/50) + 
+        ylim(0, 80) +
+        geom_smooth(method="lm")
+
+grid.arrange(p1, p2, p3, p4, p5, p6, ncol = 2)
+
+  
+
+```
+
+Lender yield is increasing with Inquiries last 6 months and ontime prosper 
+payment. 
+Lender yield is decreasing with loan original amount, Employment status 
+duration, current credit lines and stated monthly income. 
+
+loan original amount and stated monthly income showed the strongest slope 
+indicating that they have a stronger effect on lender yield.
+
+
+```{r echo=FALSE, Bivariate_Plots_eight}
+
+
+p1= ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                        y = AmountDelinquent)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+p2= ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                        y = AvailableBankcardCredit)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+
+p3= ggplot(subdf, aes(x = as.character(CreditGradeNum), 
+                        y = MonthlyLoanPayment)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+p4= ggplot(subdf, aes(x = as.character(LoanStatusNum), 
+                        y = AmountDelinquent)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+p5= ggplot(subdf, aes(x = as.character(LoanStatusNum), 
+                        y = AvailableBankcardCredit)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+
+p6= ggplot(subdf, aes(x = as.character(LoanStatusNum), 
+                        y = MonthlyLoanPayment)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+p7= ggplot(subdf, aes(x = LenderYield, 
+                        y = AmountDelinquent)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+p8= ggplot(subdf, aes(x = LenderYield, 
+                        y = AvailableBankcardCredit)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+
+p9= ggplot(subdf, aes(x = LenderYield, 
+                        y = MonthlyLoanPayment)) + 
+        geom_point(alpha = 1/50) + 
+        geom_smooth(method="lm")
+
+
+
+grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p9, ncol = 3)
+
+
+
+```
+
+These three variables: AmountDelinquent, AvailableBankcardCredit and 
+MonthlyLoanPayment are impacting the important dependent variables.
+
+
+
+
+## Bivariate Analysis
+
+Three variables are potential important outcomes in the model I am trying to
+develop. These are:
+
+CreditGrade
+LoanStatus
+LenderYield
+
+Out of the tested dependent variables, only 8 were identified that might 
+influence the targeted dependent variables. These are:
+LoanOriginalAmount
+CurrentCreditLines
+InquiriesLast6Months
+StatedMonthlyIncome
+OnTimeProsperPayments
+AmountDelinquent
+AvailableBankcardCredit
+MonthlyLoanPayment
+
+In the next section I will try to plot the most plausible relationships 
+and develop and test a model.
+
+
+
+
+
+# Multivariate Plots Section
+
+## Extracting data for the model 
+
+```{r echo=FALSE, Multivariate_Plots_one}
+
+Model <-
+  data.frame(subdf$CreditGradeNum,
+         subdf$LoanStatusNum,
+         subdf$LenderYield,
+         subdf$LoanOriginalAmount,
+         subdf$CurrentCreditLines,
+         subdf$InquiriesLast6Months,
+         subdf$StatedMonthlyIncome,
+         subdf$OnTimeProsperPayments,
+         subdf$AmountDelinquent,
+         subdf$AvailableBankcardCredit,
+         subdf$MonthlyLoanPayment)
+
+
+```
+
+## Plotting correlations Matrix
+
+```{r echo=FALSE, Multivariate_Plots_two}
+
+# Correlation matrix
+
+# Install package
+if(!require(devtools)) install.packages("devtools")
+devtools::install_github("kassambara/ggcorrplot")
+
+corr <- round(cor(Model), 1)
+
+library(ggcorrplot)
+
+# Plot
+ggcorrplot(corr)
+
+
+```
+
+
+
+
+```{r echo=FALSE, Multivariate_Plots_three}
+
+
+ggplot(subdf, aes(x = AvailableBankcardCredit, y = MonthlyLoanPayment, 
+           color = as.character(LoanStatusNum))) +
+  geom_point(alpha = 0.5, size = 1, position = 'jitter') +
+  scale_color_brewer(type = 'div', 
+                     guide = guide_legend(title = 'Loan Status',
+                                          override.aes = list(alpha = 1,
+                                                              size = 2)))+
+  ggtitle('The impact of availabelity of Bank card credit and monthly loan
+          payment on Loan status') +
+  scale_x_continuous(limits = c(0, 10000), 
+                     breaks = c(0, 2000, 4000, 6000, 8000)) + 
+  scale_y_continuous(limits = c(0, 1000), 
+                     breaks = c(0, 200, 400, 600, 800))  
+
+
+```
+
+This graph does not indicate any obvious pattern.
+
+
+
+```{r echo=FALSE, Multivariate_Plots_four}
+
+ggplot(subdf, aes(x = AvailableBankcardCredit, y = MonthlyLoanPayment, 
+           color = as.character(LoanStatusNum))) +
+  scale_color_brewer(type = 'div', 
+                     guide = guide_legend(title = 'Loan Status',
+                                          override.aes = list(alpha = 1,
+                                                              size = 2)))+
+  ggtitle('The impact of availabelity of Bank card credit and monthly loan
+          payment on Loan status') +
+  geom_smooth(aes(color = as.character(LoanStatusNum))) + 
+  scale_x_continuous(limits = c(0, 10000), 
+                     breaks = c(0, 2000, 4000, 6000, 8000)) + 
+  scale_y_continuous(limits = c(0, 1000), 
+                     breaks = c(0, 200, 400, 600, 800)) 
+
+
+
+```
+
+To some extent, better loan status are associated with lower monthly payment.
+The available Bank card credit does not affect the loan status.
+
+
+
+```{r echo=FALSE, Multivariate_Plots_five}
+
+ggplot(aes(y = CreditGradeNum, x = LoanStatusNum, 
+           fill = LoanOriginalAmount),  data = subdf) + 
+  geom_tile() +
+  scale_fill_gradientn(colours = colorRampPalette(c("blue", "red"))(100))
+
+```
+
+too many missing values.
+However, it looks like credit grade increases with loan original amount.
+
+
+
+```{r echo=FALSE, Multivariate_Plots_six}
+
+ggplot(aes(x = LoanOriginalAmount, y = LenderYield, 
+           color = as.character(CreditGradeNum)),
+       data = subdf) +
+  geom_point(alpha = 0.5, size = 1, position = 'jitter') +
+  scale_color_brewer(type = 'div', 
+                     guide = guide_legend(title = 'Loan Status', 
+                                  override.aes = list(alpha = 1, size = 2)))+
+  scale_x_continuous(limits = c(0, 26000)) +    
+  scale_y_continuous(limits = c(0, 0.4)) + 
+  ggtitle('Credit quality and Loan original ammount')
+
+
+```
+
+Loan original value is to some extent discrete. Most of the loans are taking 
+the value of $5000 and its duplicates (10K, 15K, 20K and so on).
+
+It looks like that, bad loans (with low loan status level) are generating 
+higher lender yield. This could be due to high interest rate.
+
+For good loans (paid on schedule), the lender yield is associated with loan
+original value.
+
+
+
+
+```{r echo=FALSE, Multivariate_Plots_seven}
+
+
+m1 <- lm(LenderYield ~ I(AvailableBankcardCredit), data = subdf)
+m2 <- update(m1, ~ . + LoanOriginalAmount)
+m3 <- update(m2, ~ . + MonthlyLoanPayment)
+m4 <- update(m3, ~ . + InquiriesLast6Months)
+m5 <- update(m4, ~ . + OnTimeProsperPayments)
+mtable(m1, m2, m3, m4, m5)
+
+
+```
+
+The model can only explain 26% of the variance.
+I tested many combinations including, for example, StatedMonthlyIncome
+however, it did not enhance the R^2 of the model.
+
+
+#Testing a model
+
+First selecting a random sample from the dataframe
+
+```{r echo=FALSE, Multivariate_Plots_eight}
+sampledf <- as.data.frame(sample_n(na.omit(Model), 10))
+sampledf
+colnames(sampledf)
+```
+
+
+
+```{r echo=FALSE, Multivariate_Plots_nine}
+#Testing a model
+
+for(i in sampledf){
+   y1= sampledf$subdf.LenderYield
+   sample_i = 
+     data.frame(
+       "AvailableBankcardCredit" = sampledf$subdf.AvailableBankcardCredit,
+       "LoanOriginalAmount" = sampledf$subdf.LoanOriginalAmount , 
+       "MonthlyLoanPayment" = sampledf$subdf.MonthlyLoanPayment , 
+       "InquiriesLast6Months" = sampledf$subdf.InquiriesLast6Months,
+       "OnTimeProsperPayments" = sampledf$subdf.OnTimeProsperPayments)
+      modelestimatefiti <- as.data.frame(predict(m5, newdata = sample_i, 
+                                              interval="prediction", 
+                                              level = .95))
+   i = ifelse(y1 <= modelestimatefiti$upr &  y1 >= modelestimatefiti$lwr, 
+          1, 0)
+   print(i)
+   }
+
+
+```
+
+### Double check
+The lender yield of the first random sample is: 0.19
+
+```{r echo=FALSE, Multivariate_Plots_ten}
+#Testing a model
+
+sample = data.frame(AvailableBankcardCredit = 3500, 
+                    LoanOriginalAmount = 6000, 
+                    MonthlyLoanPayment = 222.98, 
+                    InquiriesLast6Months=4,
+                    OnTimeProsperPayments = 14)
+
+modelEstimate = predict(m5, newdata = sample, interval="prediction", 
+                        level = .95)
+
+#calculate the lender yield using the model
+modelEstimate
+
+```
+
+
+
+# Multivariate Analysis
+
+To some extent, better loan status is associated with lower monthly payment.
+The available Bank card credit does not affect the loan status. However, it 
+does affect the yield on loans.
+It looks like credit grade increases with original loan amount. Loan original 
+amount is to some extent discrete. Most of the loans are taking the value 
+of $5000 and its duplicates (10K, 15K, 20K and so on).
+
+Bad loans (with low loan status level) are generating higher lender yield. 
+This could be due to penalties (for example) or higher interest rates.  
+For good loans (paid on schedule), the lender yield is associated with original
+loan amount.
+
+A model for predicting the yield on loans was generated using five variables. 
+The developed model can explain 26% of the variance. I tested many 
+combinations including, for example, StatedMonthlyIncome. However, it did not
+enhance the R^2 of the model.
+
+The model was tested using randomly selected ten samples. The model perfectly
+predicts the lender yield within the upper and the lower 95% confidence 
+intervals.
+
+Indeed, more investigation is needed to intensively evaluate the accuracy of
+the model and assess other model parameters.
+
+
+
+
+
+=================================================================
+
+
+------
+
+# Final Plots and Summary
+
+
+### Plot One
+```{r echo=FALSE, Plot_One}
+
+p1=
+qplot(data= subdf, y= LoanOriginalAmount, xlab = 'Loan original amount ($)',
+      geom = 'boxplot', ylab ="") +
+  ylim(0, quantile(subdf$LoanOriginalAmount, 0.99))
+
+p2=
+qplot(data= subdf, y= StatedMonthlyIncome, xlab = 'Stated Monthly income ($)',
+      geom = 'boxplot', ylab= "") +
+  ylim(0, quantile(subdf$StatedMonthlyIncome, 0.99))
+
+
+
+grid.arrange(p1, p2, ncol = 2, top = textGrob("Loan and borrowers main characterestics",gp=gpar(fontsize=20,font=3)))
+
+```
+
+### Description One
+Most of the borrowers are employees. The majority of the customers have low 
+dept to income ratio (75% are below 0.32) and low Available Bank Card Credit 
+(75% below $13,245). 
+This is expected because the maximum loan in the data has the value of $35,000.
+With such small loans it is not expected that the majority of the customers 
+are coorporate entities.
+
+
+
+
+
+### Plot Two
+```{r echo=FALSE, Plot_Two}
+p1 = 
+ggplot(subdf, aes(x = AvailableBankcardCredit, y = MonthlyLoanPayment, 
+           color = as.character(LoanStatusNum))) +
+  scale_color_brewer(type = 'div', 
+                     guide = guide_legend(title = 'Loan Status',
+                                          override.aes = list(alpha = 1,
+                                                              size = 2)))+
+  geom_smooth(aes(color = as.character(LoanStatusNum))) + 
+  scale_x_continuous(limits = c(0, 10000), 
+                     breaks = c(0, 2000, 4000, 6000, 8000)) + 
+  scale_y_continuous(limits = c(0, 1000), 
+                     breaks = c(0, 200, 400, 600, 800))+
+  xlab("Available bank card credit ($)")+
+  ylab("Monthly loan payment ($)")
+
+p2 = 
+ggplot(aes(x = LoanOriginalAmount, y = LenderYield, 
+           color = as.character(CreditGradeNum)),
+       data = subdf) +
+  geom_point(alpha = 0.5, size = 1, position = 'jitter') +
+  scale_color_brewer(type = 'div', 
+                     guide = guide_legend(title = 'Loan Status', 
+                                  override.aes = list(alpha = 1, size = 2)))+
+  scale_x_continuous(limits = c(0, 26000)) +    
+  scale_y_continuous(limits = c(0, 0.4)) + 
+  xlab("Loan original amount ($)")+
+  ylab("Lender yield")
+
+
+grid.arrange(p1, p2, ncol = 2, 
+             top = textGrob("Variables that impact loan status and lender yield",gp=gpar(fontsize=20,font=3)))
+
+
+
+```
+
+### Description Two
+
+To some extent, better loan status are associated with lower monthly payment.
+Loan original value is to some extent discrete. Most of the loans are taking 
+the value of $5000 and its duplicates (10K, 15K, 20K and so on).
+
+It looks like that, bad loans (with low loan status level) are generating 
+higher lender yield. This could be due to high interest rate.
+
+For good loans (paid on schedule), the lender yield is associated with loan
+original value.
+
+
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+library(grid)
+
+p1= 
+  ggplot(subdf, aes(y = LenderYield, x = AvailableBankcardCredit)) + 
+  geom_point(alpha = 1/50) +
+  geom_smooth(method="lm")+
+  ylab("Lender yield (%)")+
+  xlab("Available bank card credit ($)")
+
+
+p2= 
+  ggplot(subdf, aes(y = LenderYield, x = LoanOriginalAmount)) + 
+  geom_point(alpha = 1/50) + 
+  geom_smooth(method="lm")+
+  ylab("Lender yield (%)")+
+  xlab("Loan original amount ($)")
+
+
+p3=   
+  ggplot(subdf, aes(y = LenderYield, x = MonthlyLoanPayment)) +
+  geom_point(alpha = 1/50) + 
+  xlim(0, 2000) + 
+  geom_smooth(method="lm")+
+  ylab("Lender yield (%)")+
+  xlab("Monthly loan payment ($)")
+
+
+p4 = 
+  ggplot(subdf, aes(y = LenderYield, x = InquiriesLast6Months)) +
+  geom_point(alpha = 1/50) + 
+  xlim(0, 15) + 
+  geom_smooth(method="lm")+
+  ylab("Lender yield (%)")+
+  xlab("Inquiries in the last 6 months")
+
+
+
+p5 = 
+  ggplot(subdf, aes(y = LenderYield, x = OnTimeProsperPayments)) +
+  geom_point(alpha = 1/20) + 
+  xlim(0, 80) +
+  geom_smooth(method="lm")+
+  ylab("Lender yield (%)")+
+  xlab("On time prosper payments")
+
+
+
+grid.arrange(p1, p2, p3, p4, p5, ncol = 2, 
+             top = textGrob("Variables used in the model",
+                            gp=gpar(fontsize=20,font=3)))
+
+
+
+```
+
+### Description Three
+
+Lender yield is increasing with Inquiries last 6 months and ontime prosper 
+payment. 
+Lender yield is decreasing with loan original amount, Employment status 
+duration, current credit lines and stated monthly income.
+
+------
+
+# Reflection
+
+The developed model has an R square of 26% which is quite fair. However, when 
+the model was tested using 10 random samples from the data, it was successful 
+in predicting lender yield within the 95% confidence interval. 
+This is quite impressing.
+
+I limited the time to invest in this project to 30 working hours. If I had more
+time, I would continue in developing other models to predict other variables of
+interest.
+
+There are many limitations for this model. First, the maximum loan value was
+only 35K. This model might work well with small personal loans. For corporate 
+and large loans, more investigations must be conducted before reaching 
+premature conclusions. Another limitation, I focussed only on a linear 
+relationship.
+Probably exponential relationships exist in the data and revealing them might 
+nhance the model accuracy.
+
+
+
+
+# References
+
+- Source of the Data
+https://s3.amazonaws.com/video.udacity-data.com/topher/2018/September/5babed58_data-set-options-explore-and-summarize-data-project/data-set-options-explore-and-summarize-data-project.pdf
+
+- Variable definitions
+https://rpubs.com/mohohoh/ProsperDefinitions
+
+- Code for random subset of a dataframe
+https://www.statmethods.net/management/subset.html
+
+- R ifelse() Function
+https://www.datamentor.io/r-programming/ifelse-function/
+
+- Sources for pie chart code
+https://stackoverflow.com/questions/33594642/beautiful-pie-charts-with-r
+
+http://www.sthda.com/english/wiki/ggplot2-pie-chart-quick-start-guide-r-software-and-data-visualization
+
+- Source for the code of the correlation matrix
+http://www.sthda.com/english/wiki/ggcorrplot-visualization-of-a-correlation-matrix-using-ggplot2
+
+
+- Source for teh forcats code and teh bar plot
+https://stackoverflow.com/questions/42497063/r-sorting-factor-by-level-frequency-and-plotting
+
+https://stackoverflow.com/questions/1330989/rotating-and-spacing-axis-labels-in-ggplot2
+
+
